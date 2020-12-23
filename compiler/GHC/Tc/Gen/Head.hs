@@ -723,8 +723,9 @@ tcCheckId name res_ty
   = do { (expr, actual_res_ty) <- tcInferId name
        ; traceTc "tcCheckId" (vcat [ppr name, ppr actual_res_ty, ppr res_ty])
        ; addFunResCtxt expr [] actual_res_ty res_ty $
-         tcWrapResultO (OccurrenceOf name) (HsVar noExtField (noLoc name)) expr
-                                           actual_res_ty res_ty }
+         tcWrapResultO (OccurrenceOf (getOccName name))
+                       (HsVar noExtField (noLoc name))
+                       expr actual_res_ty res_ty }
 
 ------------------------
 tcInferId :: Name -> TcM (HsExpr GhcTc, TcSigmaType)
@@ -747,7 +748,7 @@ tc_infer_assert :: Name -> TcM (HsExpr GhcTc, TcSigmaType)
 -- See Note [Adding the implicit parameter to 'assert']
 tc_infer_assert assert_name
   = do { assert_error_id <- tcLookupId assertErrorName
-       ; (wrap, id_rho) <- topInstantiate (OccurrenceOf assert_name)
+       ; (wrap, id_rho) <- topInstantiate (OccurrenceOf (getOccName assert_name))
                                           (idType assert_error_id)
        ; return (mkHsWrap wrap (HsVar noExtField (noLoc assert_error_id)), id_rho)
        }
@@ -828,7 +829,7 @@ tc_infer_id id_name
                                  theta' = substTheta subst theta
                                  args'  = substScaledTys subst args
                                  res'   = substTy subst res
-                           ; wrap <- instCall (OccurrenceOf id_name) tys' theta'
+                           ; wrap <- instCall (OccurrenceOf occ) tys' theta'
                            ; let scaled_arg_tys = scaleArgs args'
                                  eta_wrap = etaWrapper scaled_arg_tys
                            ; addDataConStupidTheta con tys'
@@ -998,7 +999,7 @@ checkCrossStageLifting top_lvl id (Brack _ (TcPending ps_var lie_var q))
                   else
                      setConstraintVar lie_var   $
                           -- Put the 'lift' constraint into the right LIE
-                     newMethodFromName (OccurrenceOf id_name)
+                     newMethodFromName (OccurrenceOf id_occ)
                                        GHC.Builtin.Names.TH.liftName
                                        [getRuntimeRep id_ty, id_ty]
 
@@ -1012,6 +1013,7 @@ checkCrossStageLifting top_lvl id (Brack _ (TcPending ps_var lie_var q))
         ; return () }
   where
     id_name = idName id
+    id_occ  = nameOccName id_name
 
 checkCrossStageLifting _ _ _ = return ()
 

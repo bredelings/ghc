@@ -197,15 +197,12 @@ tcExpr e@(HsRecFld {})      res_ty = tcApp e res_ty
 --
 -- Some of these started life as a true expression hole "_".
 -- Others might simply be variables that accidentally have no binding site
-tcExpr e@(HsUnboundVar _ occ) res_ty
-  = do { ty <- newOpenFlexiTyVarTy  -- Allow Int# etc (#12531)
-       ; name <- newSysName occ
-       ; let ev = mkLocalId name Many ty
-       ; emitNewExprHole occ ev ty
+tcExpr (HsUnboundVar _ occ) res_ty
+  = do { ty <- expTypeToType res_ty    -- Allow Int# etc (#12531)
+       ; her <- emitNewExprHole occ ty
        ; tcEmitBindingUsage bottomUE   -- Holes fit any usage environment
                                        -- (#18491)
-       ; tcWrapResultO (UnboundOccurrenceOf occ) e
-                       (HsUnboundVar ev occ) ty res_ty }
+       ; return (HsUnboundVar her occ) }
 
 tcExpr e@(HsLit x lit) res_ty
   = do { let lit_ty = hsLitType lit
@@ -604,7 +601,7 @@ tcExpr expr@(RecordCon { rcon_con_name = L loc con_name
 
         ; tcWrapResultMono expr expr' actual_res_ty res_ty } } }
   where
-    orig = OccurrenceOf con_name
+    orig = OccurrenceOf (getOccName con_name)
 
 {-
 Note [Type of a record update]

@@ -73,5 +73,5 @@ evCallStack cs = do
         return (pushCS nameExpr locExpr (Cast tm ip_co))
 
   case cs of
-    EvCsPushCall name loc tm -> mkPush (occNameFS $ getOccName name) loc tm
+    EvCsPushCall name loc tm -> mkPush (occNameFS name) loc tm
     EvCsEmpty -> return emptyCS

@@ -1281,7 +1281,7 @@ addDataConStupidTheta data_con inst_tys
   | null stupid_theta = return ()
   | otherwise         = instStupidTheta origin inst_theta
   where
-    origin = OccurrenceOf (dataConName data_con)
+    origin = OccurrenceOf (getOccName data_con)
         -- The origin should always report "occurrence of C"
         -- even when C occurs in a pattern
     stupid_theta = dataConStupidTheta data_con
