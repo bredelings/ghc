@@ -87,6 +87,8 @@ import GHC.Parser.Errors
 import GHC.Builtin.Types ( unitTyCon, unitDataCon, tupleTyCon, tupleDataCon, nilDataCon,
                            unboxedUnitTyCon, unboxedUnitDataCon,
                            listTyCon_RDR, consDataCon_RDR, eqTyCon_RDR)
+
+import qualified Data.Semigroup as Semi
 }
 
 %expect 0 -- shift/reduce conflicts
@@ -767,12 +769,12 @@ msubsts :: { OrdList (LHsModuleSubst PackageName) }
         | msubst             { unitOL $1 }
 
 msubst :: { LHsModuleSubst PackageName }
-        : modid '=' moduleid { sLL $1 $> $ ($1, $3) }
-        | modid VARSYM modid VARSYM { sLL $1 $> $ ($1, sLL $2 $> $ HsModuleVar $3) }
+        : modid '=' moduleid { sLL $1 $> $ (unModid $1, $3) }
+        | modid VARSYM modid VARSYM { sLL $1 $> $ (unModid $1, sLL $2 $> $ HsModuleVar (unModid $3)) }
 
 moduleid :: { LHsModuleId PackageName }
-          : VARSYM modid VARSYM { sLL $1 $> $ HsModuleVar $2 }
-          | unitid ':' modid    { sLL $1 $> $ HsModuleId $1 $3 }
+          : VARSYM modid VARSYM { sLL $1 $> $ HsModuleVar (unModid $2)}
+          | unitid ':' modid    { sLL $1 $> $ HsModuleId $1 (unModid $3) }
 
 pkgname :: { Located PackageName }
         : STRING     { sL1 $1 $ PackageName (getSTRING $1) }
@@ -809,8 +811,8 @@ rns :: { OrdList LRenaming }
         | rn         { unitOL $1 }
 
 rn :: { LRenaming }
-        : modid 'as' modid { sLL $1 $> $ Renaming $1 (Just $3) }
-        | modid            { sL1 $1    $ Renaming $1 Nothing }
+        : modid 'as' modid { sLL $1 $> $ Renaming (unModid $1) (Just (unModid $3)) }
+        | modid            { sL1 $1    $ Renaming (unModid $1) Nothing }
 
 unitbody :: { OrdList (LHsUnitDecl PackageName) }
         : '{'     unitdecls '}'   { $2 }
@@ -828,19 +830,19 @@ unitdecl :: { LHsUnitDecl PackageName }
                  (case snd $2 of
                    NotBoot -> HsSrcFile
                    IsBoot  -> HsBootFile)
-                 $3
-                 (Just $ sL1 $1 (HsModule noAnn (thdOf3 $7) (Just $3) $5 (fst $ sndOf3 $7) (snd $ sndOf3 $7) $4 Nothing)) }
+                 (unModid $3)
+                 (Just $ sL1 $1 (HsModule noAnn (thdOf3 $7) (Just (unModid $3)) $5 (fst $ sndOf3 $7) (snd $ sndOf3 $7) $4 Nothing)) }
         | 'signature' modid maybemodwarning maybeexports 'where' body
              { sL1 $1 $ DeclD
                  HsigFile
-                 $2
-                 (Just $ sL1 $1 (HsModule noAnn (thdOf3 $6) (Just $2) $4 (fst $ sndOf3 $6) (snd $ sndOf3 $6) $3 Nothing)) }
+                 (unModid $2)
+                 (Just $ sL1 $1 (HsModule noAnn (thdOf3 $6) (Just (unModid $2)) $4 (fst $ sndOf3 $6) (snd $ sndOf3 $6) $3 Nothing)) }
         | 'module' maybe_src modid
              { sL1 $1 $ DeclD (case snd $2 of
                    NotBoot -> HsSrcFile
-                   IsBoot  -> HsBootFile) $3 Nothing }
+                   IsBoot  -> HsBootFile) (unModid $3) Nothing }
         | 'signature' modid
-             { sL1 $1 $ DeclD HsigFile $2 Nothing }
+             { sL1 $1 $ DeclD HsigFile (unModid $2) Nothing }
         | 'dependency' unitid mayberns
              { sL1 $1 $ IncludeD (IncludeDecl { idUnitId = $2
                                               , idModRenaming = $3
@@ -864,15 +866,15 @@ signature :: { Located HsModule }
        : 'signature' modid maybemodwarning maybeexports 'where' body
              {% fileSrcSpan >>= \ loc ->
                 acs (\cs-> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnSignature $1, mj AnnWhere $5] (fstOf3 $6)) cs)
-                              (thdOf3 $6) (Just $2) $4 (fst $ sndOf3 $6)
+                              (thdOf3 $6) (Just (unModid $2)) $4 (fst $ sndOf3 $6)
                               (snd $ sndOf3 $6) $3 Nothing))
                     ) }
 
 module :: { Located HsModule }
        : 'module' modid maybemodwarning maybeexports 'where' body
              {% fileSrcSpan >>= \ loc ->
-                acs (\cs -> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnModule $1, mj AnnWhere $5] (fstOf3 $6)) cs)
-                               (thdOf3 $6) (Just $2) $4 (fst $ sndOf3 $6)
+                acs (\cs -> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnModule $1, mj AnnWhere $5] (fstOf3 $6)) ((fst $ unLoc $2) Semi.<> cs))
+                               (thdOf3 $6) (Just (unModid $2)) $4 (fst $ sndOf3 $6)
                               (snd $ sndOf3 $6) $3 Nothing)
                     )) }
         | body2
@@ -927,13 +929,13 @@ top1    :: { ([LImportDecl GhcPs], [LHsDecl GhcPs]) }
 header  :: { Located HsModule }
         : 'module' modid maybemodwarning maybeexports 'where' header_body
                 {% fileSrcSpan >>= \ loc ->
-                   acs (\cs -> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnModule $1,mj AnnWhere $5] (AnnList Nothing Nothing [] [])) cs)
-                              NoLayoutInfo (Just $2) $4 $6 [] $3 Nothing
+                   acs (\cs -> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnModule $1,mj AnnWhere $5] (AnnList Nothing Nothing [] [])) ((fst $ unLoc $2) Semi.<> cs))
+                              NoLayoutInfo (Just (unModid $2)) $4 $6 [] $3 Nothing
                           ))) }
         | 'signature' modid maybemodwarning maybeexports 'where' header_body
                 {% fileSrcSpan >>= \ loc ->
-                   acs (\cs -> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnModule $1,mj AnnWhere $5] (AnnList Nothing Nothing [] [])) cs)
-                           NoLayoutInfo (Just $2) $4 $6 [] $3 Nothing
+                   acs (\cs -> (L loc (HsModule (ApiAnn (spanAsAnchor loc) (AnnsModule [mj AnnModule $1,mj AnnWhere $5] (AnnList Nothing Nothing [] [])) ((fst $ unLoc $2) Semi.<> cs))
+                           NoLayoutInfo (Just (unModid $2)) $4 $6 [] $3 Nothing
                           ))) }
         | header_body2
                 {% fileSrcSpan >>= \ loc ->
@@ -991,7 +993,7 @@ exportlist1 :: { OrdList (LIE GhcPs) }
 export  :: { OrdList (LIE GhcPs) }
         : qcname_ext export_subspec  {% mkModuleImpExp (fst $ unLoc $2) $1 (snd $ unLoc $2)
                                           >>= \ie -> fmap (unitOL . reLocA) (return (sLL (reLoc $1) $> ie)) }
-        |  'module' modid            {% fmap (unitOL . reLocA) (acs (\cs -> sLL $1 $> (IEModuleContents (ApiAnn (glR $1) [mj AnnModule $1] cs) $2))) }
+        |  'module' modid            {% fmap (unitOL . reLocA) (acs (\cs -> sLL $1 $> (IEModuleContents (ApiAnn (glR $1) [mj AnnModule $1] ((fst $ unLoc $2) Semi.<> cs)) (unModid $2)))) }
         |  'pattern' qcon            { unitOL (reLocA (sLL $1 (reLocN $>)
                                               (IEVar noExtField (sLLa $1 (reLocN $>) (IEPattern (glRR $1) $2))))) }
 
@@ -1080,16 +1082,16 @@ importdecl :: { LImportDecl GhcPs }
                              , importDeclAnnSafe      = fst $3
                              , importDeclAnnQualified = fst $ importDeclQualifiedStyle mPreQual mPostQual
                              , importDeclAnnPackage   = fst $5
-                             , importDeclAnnAs        = fst $8
+                             , importDeclAnnAs        = sndOf3 $8
                              }
-                  ; fmap reLocA $ acs (\cs -> L (comb5 $1 $6 $7 (snd $8) $9) $
-                      ImportDecl { ideclExt = ApiAnn (glR $1) anns cs
+                  ; fmap reLocA $ acs (\cs -> L (comb5 $1 $6 $7 (thdOf3 $8) $9) $
+                      ImportDecl { ideclExt = ApiAnn (glR $1) anns ((fst $ unLoc $6) Semi.<> (fstOf3 $8) Semi.<> cs)
                                   , ideclSourceSrc = snd $ fst $2
-                                  , ideclName = $6, ideclPkgQual = snd $5
+                                  , ideclName = unModid $6, ideclPkgQual = snd $5
                                   , ideclSource = snd $2, ideclSafe = snd $3
                                   , ideclQualified = snd $ importDeclQualifiedStyle mPreQual mPostQual
                                   , ideclImplicit = False
-                                  , ideclAs = unLoc (snd $8)
+                                  , ideclAs = unLoc (thdOf3 $8)
                                   , ideclHiding = unLoc $9 })
                   }
                 }
@@ -1118,10 +1120,10 @@ optqualified :: { Located (Maybe RealSrcSpan) }
         : 'qualified'                           { sL1 $1 (Just (glRR $1)) }
         | {- empty -}                           { noLoc Nothing }
 
-maybeas :: { (Maybe RealSrcSpan,Located (Maybe (Located ModuleName))) }
-        : 'as' modid                           { (Just (glRR $1)
-                                                 ,sLL $1 $> (Just $2)) }
-        | {- empty -}                          { (Nothing,noLoc Nothing) }
+maybeas :: { (ApiAnnComments,Maybe RealSrcSpan,Located (Maybe (Located ModuleName))) }
+        : 'as' modid                           { (fst $ unLoc $2, Just (glRR $1)
+                                                 ,sLL $1 $> (Just (unModid $2))) }
+        | {- empty -}                          { (noCom,Nothing,noLoc Nothing) }
 
 maybeimpspec :: { Located (Maybe (Bool, LocatedL [LIE GhcPs])) }
         : impspec                  {% let (b, ie) = unLoc $1 in
@@ -1185,7 +1187,7 @@ topdecl :: { LHsDecl GhcPs }
         | '{-# WARNING' warnings '#-}'          {% acsA (\cs -> sLL $1 $> $ WarningD noExtField (Warnings (ApiAnn (glR $1) [mo $1,mc $3] cs) (getWARNING_PRAGs $1) (fromOL $2))) }
         | '{-# RULES' rules '#-}'               {% acsA (\cs -> sLL $1 $> $ RuleD noExtField (HsRules (ApiAnn (glR $1) [mo $1,mc $3] cs) (getRULES_PRAGs $1) (reverse $2))) }
         | annotation { $1 }
-        | decl_no_th                            { $1 }
+        | decl_no_th                            {% commentsPA $1 }
 
         -- Template Haskell Extension
         -- The $(..) form is one possible form of infixexp
@@ -1384,7 +1386,9 @@ ty_fam_inst_eqn :: { LTyFamInstEqn GhcPs }
         : 'forall' tv_bndrs '.' type '=' ktype
               {% do { hintExplicitForall $1
                     ; tvbs <- fromSpecTyVarBndrs $2
-                    ; mkTyFamInstEqn (comb2A $1 $>) (mkHsOuterExplicit (ApiAnn (glR $1) (mu AnnForall $1, mj AnnDot $3) []) tvbs) $4 $6 [mj AnnEqual $5] }}
+                    ; let loc = comb2A $1 $>
+                    ; cs <- getCommentsFor loc
+                    ; mkTyFamInstEqn loc (mkHsOuterExplicit (ApiAnn (glR $1) (mu AnnForall $1, mj AnnDot $3) cs) tvbs) $4 $6 [mj AnnEqual $5] }}
                     -- ; (eqn,ann) <- mkTyFamInstEqn (mkHsOuterExplicit tvbs) $4 $6
                     -- ; return (sLL $1 $>
                     --            (mu AnnForall $1:mj AnnDot $3:mj AnnEqual $5:ann,eqn)) } }
@@ -1516,12 +1520,13 @@ datafam_inst_hdr :: { Located (Maybe (LHsContext GhcPs), HsOuterFamEqnTyVarBndrs
                                                          >>= \tvbs ->
                                                              (acs (\cs -> (sLL $1 (reLoc $>)
                                                                                   (Just ( addTrailingDarrowC $4 $5 cs)
-                                                                                        , mkHsOuterExplicit (ApiAnn (glR $1) (mu AnnForall $1, mj AnnDot $3) []) tvbs, $6))))
+                                                                                        , mkHsOuterExplicit (ApiAnn (glR $1) (mu AnnForall $1, mj AnnDot $3) noCom) tvbs, $6))))
                                                     }
         | 'forall' tv_bndrs '.' type   {% do { hintExplicitForall $1
                                              ; tvbs <- fromSpecTyVarBndrs $2
-                                             ; return (sLL $1 (reLoc $>)
-                                                                 (Nothing, mkHsOuterExplicit (ApiAnn (glR $1) (mu AnnForall $1, mj AnnDot $3) []) tvbs, $4))
+                                             ; let loc = comb2 $1 (reLoc $>)
+                                             ; cs <- getCommentsFor loc
+                                             ; return (sL loc (Nothing, mkHsOuterExplicit (ApiAnn (glR $1) (mu AnnForall $1, mj AnnDot $3) cs) tvbs, $4))
                                        } }
         | context '=>' type         {% acs (\cs -> (sLLAA $1 $>(Just (addTrailingDarrowC $1 $2 cs), mkHsOuterImplicit, $3))) }
         | type                      { sL1A $1 (Nothing, mkHsOuterImplicit, $1) }
@@ -2476,7 +2481,7 @@ decl_no_th :: { LHsDecl GhcPs }
                                         -- Depending upon what the pattern looks like we might get either
                                         -- a FunBind or PatBind back from checkValDef. See Note
                                         -- [FunBind vs PatBind]
-                                          ; cs <- getPriorCommentsFor l
+                                          ; cs <- getCommentsFor l
                                           ; return $! (sL (commentsA l cs) $ ValD noExtField r) } }
         | pattern_synonym_decl  { $1 }
 
@@ -2761,7 +2766,7 @@ aexp    :: { ECP }
                                          $ Match { m_ext = ApiAnn (glR $1) [mj AnnLam $1] cs
                                                  , m_ctxt = LambdaExpr
                                                  , m_pats = $2:$3
-                                                 , m_grhss = unguardedGRHSs (comb2 $4 (reLoc $5)) $5 (ApiAnn (glR $4) (GrhsAnn Nothing (mu AnnRarrow $4)) []) }])) }
+                                                 , m_grhss = unguardedGRHSs (comb2 $4 (reLoc $5)) $5 (ApiAnn (glR $4) (GrhsAnn Nothing (mu AnnRarrow $4)) noCom) }])) }
         | 'let' binds 'in' exp          {  ECP $
                                            unECP $4 >>= \ $4 ->
                                            mkHsLetPV (comb2A $1 $>) (unLoc $2) $4
@@ -2974,7 +2979,7 @@ tup_exprs :: { forall b. DisambECP b => PV (SumOrTuple b) }
                                 ; return (Tuple (Right t : snd $2)) } }
            | commas tup_tail
                  { $2 >>= \ $2 ->
-                   do { let {cos = map (\ll -> (Left (ApiAnn (anc $ rs ll) (rs ll) []))) (fst $1) }
+                   do { let {cos = map (\ll -> (Left (ApiAnn (anc $ rs ll) (rs ll) noCom))) (fst $1) }
                       ; return (Tuple (cos ++ $2)) } }
 
            | texp bars   { unECP $1 >>= \ $1 -> return $
@@ -2988,7 +2993,7 @@ tup_exprs :: { forall b. DisambECP b => PV (SumOrTuple b) }
 commas_tup_tail :: { forall b. DisambECP b => PV (SrcSpan,[Either (ApiAnn' RealSrcSpan) (LocatedA b)]) }
 commas_tup_tail : commas tup_tail
         { $2 >>= \ $2 ->
-          do { let {cos = map (\l -> (Left (ApiAnn (anc $ rs l) (rs l) []))) (tail $ fst $1) }
+          do { let {cos = map (\l -> (Left (ApiAnn (anc $ rs l) (rs l) noCom))) (tail $ fst $1) }
              ; return ((head $ fst $1, cos ++ $2)) } }
 
 -- Always follows a comma
@@ -3736,12 +3741,15 @@ close :: { () }
 -----------------------------------------------------------------------------
 -- Miscellaneous (mostly renamings)
 
-modid   :: { Located ModuleName }
-        : CONID                 { sL1 $1 $ mkModuleNameFS (getCONID $1) }
-        | QCONID                { sL1 $1 $ let (mod,c) = getQCONID $1 in
-                                  mkModuleNameFS
-                                   (mkFastString
-                                     (unpackFS mod ++ '.':unpackFS c))
+modid   :: { Located (ApiAnnComments, Located ModuleName) }
+        : CONID                 {% do { cs <- getPriorCommentsFor (gl $1)
+                                      ; return $ sL1 $1 (cs, sL1 $1 $ mkModuleNameFS (getCONID $1))} }
+        | QCONID                {% do { cs <- getPriorCommentsFor (gl $1)
+                                      ; let { (mod,c) = getQCONID $1 }
+                                      ; return $ sL1 $1 (cs, sL1 $1 $
+                                            mkModuleNameFS
+                                            (mkFastString
+                                                (unpackFS mod ++ '.':unpackFS c))) }
                                 }
 
 commas :: { ([SrcSpan],Int) }   -- One or more commas
@@ -4047,6 +4055,9 @@ in GHC.Parser.Annotation
 
 -}
 
+unModid :: Located (ApiAnnComments, Located ModuleName) -> Located ModuleName
+unModid (L _ (_, lm)) = lm
+
 -- |Construct an AddApiAnn from the annotation keyword and the location
 -- of the keyword itself
 mj :: AnnKeywordId -> Located e -> AddApiAnn
@@ -4114,13 +4125,13 @@ anc r = Anchor r UnchangedAnchor
 
 acs :: MonadP m => (ApiAnnComments -> Located a) -> m (Located a)
 acs a = do
-  let (L l _) = a []
+  let (L l _) = a noCom
   cs <- getCommentsFor l
   return (a cs)
 
 acsa :: MonadP m => (ApiAnnComments -> LocatedAn t a) -> m (LocatedAn t a)
 acsa a = do
-  let (L l _) = a []
+  let (L l _) = a noCom
   cs <- getCommentsFor (locA l)
   return (a cs)
 
@@ -4205,6 +4216,11 @@ parseModule = parseModuleNoHaddock >>= addHaddockToModule
 commentsA :: (Monoid ann) => SrcSpan -> ApiAnnComments -> SrcSpanAnn' (ApiAnn' ann)
 commentsA loc cs = SrcSpanAnn (ApiAnn (Anchor (rs loc) UnchangedAnchor) mempty cs) loc
 
+commentsPA :: (Monoid ann) => LocatedAn ann a -> P (LocatedAn ann a)
+commentsPA la@(L l a) = do
+  cs <- getPriorCommentsFor (getLocA la)
+  return (L (addCommentsToSSA l cs) a)
+
 rs :: SrcSpan -> RealSrcSpan
 rs (RealSrcSpan l _) = l
 rs _ = panic "Parser should only have RealSrcSpan"
@@ -4226,7 +4242,7 @@ addTrailingCommaA  la span = addTrailingAnnA la span AddCommaAnn
 addTrailingAnnA :: MonadP m => LocatedA a -> SrcSpan -> (RealSrcSpan -> TrailingAnn) -> m (LocatedA a)
 addTrailingAnnA (L (SrcSpanAnn anns l) a) ss ta = do
   -- cs <- getCommentsFor l
-  let cs = []
+  let cs = noCom
   -- AZ:TODO: generalise updating comments into an annotation
   let
     anns' = if isZeroWidthSpan ss
@@ -4254,7 +4270,7 @@ addTrailingAnnL (L (SrcSpanAnn anns l) a) ta = do
 addTrailingCommaN :: MonadP m => LocatedN a -> SrcSpan -> m (LocatedN a)
 addTrailingCommaN (L (SrcSpanAnn anns l) a) span = do
   -- cs <- getCommentsFor l
-  let cs = []
+  let cs = noCom
   -- AZ:TODO: generalise updating comments into an annotation
   let anns' = if isZeroWidthSpan span
                 then anns
@@ -4274,7 +4290,7 @@ addTrailingDarrowC (L (SrcSpanAnn ApiAnnNotUsed l) a) lt cs =
 addTrailingDarrowC (L (SrcSpanAnn (ApiAnn lr (AnnContext _ o c) csc) l) a) lt cs =
   let
     u = if (isUnicode lt) then UnicodeSyntax else NormalSyntax
-  in L (SrcSpanAnn (ApiAnn lr (AnnContext (Just (u,glRR lt)) o c) (cs++csc)) l) a
+  in L (SrcSpanAnn (ApiAnn lr (AnnContext (Just (u,glRR lt)) o c) (cs Semi.<> csc)) l) a
 
 -- -------------------------------------
 

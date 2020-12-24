@@ -104,7 +104,7 @@ tt = testOneFile "/home/alanz/mysrc/git.haskell.org/worktree/exactprint/_build/s
  -- "../../testsuite/tests/printer/Test11018.hs"
  -- "../../testsuite/tests/printer/Test11332.hs"
  -- "../../testsuite/tests/printer/Test16230.hs"
- -- "../../testsuite/tests/printer/AnnotationLet.hs"
+ "../../testsuite/tests/printer/AnnotationLet.hs"
  -- "../../testsuite/tests/printer/AnnotationTuple.hs"
  -- "../../testsuite/tests/ghc-api/annotations/CommentsTest.hs"
  -- "../../testsuite/tests/hiefile/should_compile/Scopes.hs"
@@ -113,7 +113,8 @@ tt = testOneFile "/home/alanz/mysrc/git.haskell.org/worktree/exactprint/_build/s
  -- "../../testsuite/tests/printer/Ppr055.hs"
  -- "../../testsuite/tests/hiefile/should_run/PatTypes.hs"
  -- "./cases/AddDecl.hs"
- "./cases/LocalDecls2.expected.hs"
+ -- "./cases/LocalDecls2.expected.hs"
+ -- "./cases/WhereIn3a.hs"
 
 -- exact = ppr
 
@@ -156,7 +157,7 @@ testOneFile libdir fileName = do
        -- putStrLn $ "\n\nabout to pp"
        writeFile newFile pped
 
-       -- putStrLn $ "anns':" ++ showPprUnsafe (apiAnnRogueComments anns')
+       putStrLn $ "anns':" ++ showPprUnsafe (apiAnnRogueComments anns')
 
        p' <- parseOneFile libdir newFile
 
